@@ -32,6 +32,14 @@ include sources.mk
 # Platform Overrides
 #PLATFORM =
 BASENAME = c1m2
+
+ifeq ($(OS),Windows_NT)
+	RM = del /Q /F
+	NULLDEV = NUL
+else
+	RM = rm -f
+	NULLDEV = /dev/null
+endif
  
 # Architectures Specific Flags
 ifeq ($(PLATFORM), MSP432)
@@ -41,13 +49,14 @@ ifeq ($(PLATFORM), MSP432)
 	SPECS = nosys.specs
 else
 	CPU = x86_64
-	ARCH:=$(shell arch)
+	ARCH := $(if $(PROCESSOR_ARCHITECTURE),$(PROCESSOR_ARCHITECTURE),x86_64)
 endif 
 
 # Compiler Flags and Defines
 ifeq ($(PLATFORM), MSP432)
 	CC = arm-none-eabi-gcc
 	LD = arm-none-eabi-ld
+	OBJDUMP = arm-none-eabi-objdump
 	LDFLAGS = -Wl,-Map=$(BASENAME).map $(LINKER_FILE) 
 	### -Wl,option: Pass option as an option to the linker. If option contains commas, it is split into multiple options at the commas. You can use this syntax to pass an argument to the option. For 		example, -Wl,-Map,output.map passes -Map output.map to the linker. When using the GNU linker, you can also get the same effect with -Wl,-Map=output.map.
 	CFLAGS = -mcpu=$(CPU) -march=$(ARCH) --specs=$(SPECS) -mfloat-abi=hard -mfpu=fpv4-sp-d16 -mthumb -Wall -Werror -O0 -g -std=c99
@@ -59,19 +68,23 @@ ifeq ($(PLATFORM), MSP432)
 	DEFINEFLAG = -DMSP432
 else
 	CC = gcc
+	OBJDUMP = objdump
 	#LD = 
 	LDFLAGS = -Wl,-Map=$(BASENAME).map
-	CFLAGS = -Wall -Werror -O0 -g -std=c99
+	CFLAGS = -Wall -Werror -O0 -g -std=c99 -I..
 	CPPFLAGs = -M -MF test2.d
 	DEFINEFLAG = -DHOST
 endif
 
 # More Declared Variables
 OBJS:= $(SOURCES:.c=.o)
+DEPS:= $(SOURCES:.c=.d)
 ASMS:= $(SOURCES:.c=.s)
 PPS:= $(SOURCES:.c=.i)
 MAPS:= $(SOURCES:.c=.map)
 OUTS:= $(SOURCES:.c=.out)
+
+-include $(DEPS)
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
 # Target: <file>.i
@@ -89,9 +102,8 @@ OUTS:= $(SOURCES:.c=.out)
 # Prerequisites: the .c file
 # Output: the .asm file whether from the .c file or the object file
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
-%.asm : %.c
-	$(CC) $(DEFINEFLAG) $(CFLAGS) -S $<
-	objdump $(OBJS) -D
+$(BASENAME).asm: $(BASENAME).out
+	$(OBJDUMP) -d $< > $@
 ### -S: Stop after the stage of compilation proper; do not assemble. The output is in the form of an assembler code file for each non-assembler input file specified. 
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
@@ -100,7 +112,7 @@ OUTS:= $(SOURCES:.c=.out)
 # Output: the .o file corresponding to the provided .c file
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
 %.o : %.c
-	$(CC) $(DEFINEFLAG) $(CFLAGS) -c $<
+	$(CC) $(DEFINEFLAG) $(CFLAGS) -MMD -MP -MF $(@:.o=.d) -c $<
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
 # Target: compile-all
@@ -108,9 +120,9 @@ OUTS:= $(SOURCES:.c=.out)
 # Output: all source files are compiled but without linking and their corresponding .o files are generated
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
 .PHONY: compile-all
-compile-all: $(SOURCES)
+compile-all: $(OBJS)
 #$(OBJS): $(SOURCES)
-	$(CC) $(DEFINEFLAG) $(CFLAGS) -c $(SOURCES)
+	@echo "Compiled object files: $(OBJS)"
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
 # Target: build
@@ -118,12 +130,13 @@ compile-all: $(SOURCES)
 # Output: the final executable file after linking and a brief report regarding the application size
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
 .PHONY: build
-build: $(OUTS)
+build: $(BASENAME).out
 #main.out
 # I've a question here, if I set the prerequisites to main.o instead of main.out, the process doesn't get finished ... also how can make compiles the files and generate the object files when they are not provided by user as prerequesites. How can make understand that it should generate the .o files from the .c files before proceeding?
-$(OUTS): $(SOURCES)
-	$(CC) $(DEFINEFLAG) $(CFLAGS) $(LDFLAGS) -o c1m2.out $^ 
-	size c1m2.out
+
+$(BASENAME).out: $(OBJS)
+	$(CC) $(DEFINEFLAG) $(CFLAGS) $(LDFLAGS) -o $@ $^ 
+	size $@
 
 #---------------------------------------------------------------------------------------------------------------------------------------------------------------------- #
 # Target: clean
@@ -133,4 +146,4 @@ $(OUTS): $(SOURCES)
 .PHONY: clean
 clean:
 #rm -f $(OBJS) main.out $(ASMS) $(PPS) $(MAPS)
-	rm -f *.i *.d *.map *.s *.out *.o
+	-$(RM) *.i *.map *.s *.asm *.out *.o $(DEPS) >$(NULLDEV) 2>&1

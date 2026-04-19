@@ -10,7 +10,7 @@
 #*****************************************************************************
 
 ifeq ($(PLATFORM),MSP432)
-	SOURCES = *.c
+	SOURCES = $(wildcard *.c)
 
 	INCLUDES = ../include/CMSIS/cmsis_gcc.h \
 	   	../include/CMSIS/core_cm4.h \
